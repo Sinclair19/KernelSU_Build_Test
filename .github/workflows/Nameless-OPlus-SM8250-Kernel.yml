@@ -171,3 +171,64 @@ jobs:
       with:
         name: AK3-Nameless-OPlus-SM8250-Unofficial-KSU_${{ env.KSUVER_1 }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/AnyKernel3/*
+
+    - name: Setup KernelSU Next
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        rm -rf KernelSU
+        rm -rf drivers/kernelsu
+        curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next-susfs-4.19
+        KSU_Next_VERSION=$(cd KernelSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+        echo "KSUVER_2=$KSU_Next_VERSION" >> $GITHUB_ENV
+
+    - name: Build kernel with KernelSU Next
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        rm -rf out/arch/arm64/boot/Image
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export BRAND_SHOW_FLAG=oneplus
+        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc-64/bin:$PATH
+        export KBUILD_BUILD_HOST=Github-Action
+        export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
+        BA_CMD="CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android-"
+        EX_CMD="LD=ld.lld LLVM=1 LLVM_IAS=1"
+        DEFCONFIG="vendor/kona-perf_defconfig vendor/debugfs.config"
+        make O=out ARCH=arm64 CC=clang $BA_CMD $EX_CMD $DEFCONFIG
+        make -j$(nproc --all) O=out ARCH=arm64 CC=clang $BA_CMD $EX_CMD
+
+    - name: Check a kernel output files with KernelSU Next
+      run: |
+       cd $GITHUB_WORKSPACE/kernel_workspace
+       if [ -f android-kernel/out/arch/arm64/boot/Image ]; then
+           echo "CHECK_IMAGE_2=true" >> $GITHUB_ENV
+       else
+           echo "Kernel output file is empty"
+           exit 1
+       fi
+
+    - name: Make AnyKernel3 with KernelSU Next
+      if: env.CHECK_IMAGE_2 == 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        rm -rf AnyKernel3/Image
+        cp android-kernel/out/arch/arm64/boot/Image AnyKernel3/
+
+    - name: Compress AnyKernel3 with KernelSU Next folder to zip
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/AnyKernel3
+        zip -r $GITHUB_WORKSPACE/AK3-Nameless-OPlus-SM8250-KSU-Next_${{ env.KSUVER_2 }}-${{ env.BUILD_TIME }}.zip ./*
+
+    - name: Upload Image
+      if: env.CHECK_IMAGE_2 == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Image-KSU-Next_${{ env.KSUVER_2 }}
+        path: kernel_workspace/android-kernel/out/arch/arm64/boot/Image
+
+    - name: Upload AnyKernel3
+      if: env.CHECK_IMAGE_2 == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: AK3-Nameless-OPlus-SM8250-KSU-Next_${{ env.KSUVER_2 }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/AnyKernel3/*
